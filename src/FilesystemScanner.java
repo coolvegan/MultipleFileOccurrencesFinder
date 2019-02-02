@@ -1,93 +1,111 @@
 import java.io.IOException;
-import java.nio.file.*;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.List;
 
-public class FilesystemScanner {
-    private DuplicateContainer duplicateContainer;
-    private ArrayList<String> ignoreList;
-    private ArrayList<String> extList;
+public class FilesystemScanner
+{
+	private DuplicateContainer duplicateContainer;
+	private List<String> ignoreList;
+	private List<String> extensionList;
 
-    FilesystemScanner(DuplicateContainer duplicateContainer) {
-        this.duplicateContainer = duplicateContainer;
-        ignoreList = new ArrayList<>();
-        extList = new ArrayList<>();
-    }
+	FilesystemScanner(DuplicateContainer duplicateContainer)
+	{
+		this.duplicateContainer = duplicateContainer;
+		ignoreList = new ArrayList<>();
+		extensionList = new ArrayList<>();
+	}
 
-    public void observeInfix(String extention)
-    {
-        extList.add(extention);
-    }
+	public void observeInfix(String extention)
+	{
+		extensionList.add(extention);
+	}
 
-    public boolean hasExtention(String source)
-    {
-        for (int i = 0; i < extList.size(); i++) {
-            if (source.contains(extList.get(i)))
-            {
-                return true;
-            }
-        }
-        return false;
-    }
+	public boolean hasExtension(String source)
+	{
+		return searchThroughList(source,extensionList);
+	}
 
-    void ignoreInfix(String directory)
-    {
-        ignoreList.add(directory);
-    }
+	private boolean searchThroughList(String source, List<String> searchlist) {
+		for (int i = 0; i < searchlist.size(); i++)
+		{
+			if (source.contains(searchlist.get(i)))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
 
-    private boolean isIgnored(String directory)
-    {
-        for (int i = 0; i < ignoreList.size(); i++) {
-            if (directory.contains(ignoreList.get(i)))
-            {
-                return true;
-            }
-        }
-        return false;
-    }
+	void ignoreInfix(String directory)
+	{
+		ignoreList.add(directory);
+	}
 
-    public void recursiveScan(String dir) throws IOException, NoSuchAlgorithmException {
-        Path path = Paths.get(dir);
-        if (Files.exists(path)) {
-            DirectoryStream<Path> stream = Files.newDirectoryStream(path);
-            for (Path entry : stream) {
-                recursiveDegression(entry);
+	private boolean isIgnored(String directory)
+	{
+		return searchThroughList(directory, ignoreList);
+	}
 
-                if (Files.isRegularFile(entry))
-                {
-                    if (hasExtention(entry.toString())) {
-                        linkFileToHash(entry);
-                    }
-                }
-            }
-            stream.close();
-        }
-    }
+	public void recursiveScan(String dir) throws IOException, NoSuchAlgorithmException
+	{
+		Path path = Paths.get(dir);
+		// TODO: umstellen auf Guard Clause
+		if (!Files.exists(path)) {
+			return;
+		}
+			DirectoryStream<Path> stream = Files.newDirectoryStream(path);
+			for (Path entry : stream)
+			{
+				recursiveDegression(entry);
 
-    private void linkFileToHash(Path entry) throws NoSuchAlgorithmException, IOException {
-        MessageDigest md = MessageDigest.getInstance("SHA-256");
-        md.update(Files.readAllBytes(entry));
-        byte[] digest = md.digest();
+				if ((Files.isRegularFile(entry)) && (hasExtension(entry.toString())))
+				{
+					linkFileToHash(entry);
+				}
+			}
+			// TODO: umstellen auf try-with-resources
+			stream.close();
+	}
 
-        BinaryToHexConverter printHexBinary = new BinaryToHexConverter();
-        String digestInHex = printHexBinary.getHexString(digest);
+	private void linkFileToHash(Path entry) throws NoSuchAlgorithmException, IOException
+	{
+		MessageDigest md = MessageDigest.getInstance("SHA-256");
+		md.update(Files.readAllBytes(entry));
+		byte[] digest = md.digest();
 
-        if (!isIgnored(entry.toString())) {
-            duplicateContainer.addHash(digestInHex, entry.toString());
-        }
-    }
+		BinaryToHexConverter printHexBinary = new BinaryToHexConverter();
+		String digestInHex = printHexBinary.getHexString(digest);
 
-    private void recursiveDegression(Path entry) throws IOException, NoSuchAlgorithmException {
-        if (Files.isDirectory(entry)) {
-            try {
-                if (!isIgnored(entry.toString())) {
-                    recursiveScan(entry.toString());
-                }
-            } catch (AccessDeniedException x) {
-                System.out.println("Ignoriere: " + x);
-            }
-        }
-    }
+		if (!isIgnored(entry.toString()))
+		{
+			duplicateContainer.addHash(digestInHex, entry.toString());
+		}
+	}
+
+	private void recursiveDegression(Path entry) throws IOException, NoSuchAlgorithmException
+	{
+		if (!Files.isDirectory(entry)) {
+			return;
+		}
+		try
+		{
+			if (isIgnored(entry.toString())) {
+				return;
+			}
+
+			recursiveScan(entry.toString());
+		}
+		catch (AccessDeniedException x)
+		{
+			System.out.println("Ignoriere: " + x);
+		}
+	}
 
 }
